@@ -5,14 +5,28 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { fillW9 } from "@/lib/w9";
 import { fillICA } from "@/lib/ica";
-import { sendMail, BOOKKEEPING_EMAIL } from "@/lib/email";
+import { fillPerformance } from "@/lib/performance";
+import { sendMail, BOOKKEEPING_EMAIL, NOTIFY_EMAIL } from "@/lib/email";
+import { ensureAgentFolder, uploadToFolder } from "@/lib/drive";
 
 const TEAM_SIG_PATH = "config/team-signature.png";
 import { QUESTIONNAIRE } from "@/lib/questionnaire";
 
+// Self-serve task keys that notify Noah the moment the agent completes them.
+const NOTIFY_ON_COMPLETE: Record<string, string> = {
+  zillow_confirm:
+    "confirmed they created their Zillow Premier Agent account — add them to the team on Zillow Premier.",
+};
+
 // Agent marks a self-serve task complete (or unchecks it).
 export async function toggleSelfTask(agentTaskId: string, done: boolean) {
   const supabase = await createClient();
+  const { data: at } = await supabase
+    .from("agent_tasks")
+    .select("agent_id, task:tasks(key), agent:agents(full_name)")
+    .eq("id", agentTaskId)
+    .single();
+
   await supabase
     .from("agent_tasks")
     .update({
@@ -21,6 +35,15 @@ export async function toggleSelfTask(agentTaskId: string, done: boolean) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", agentTaskId);
+
+  const key = (at?.task as unknown as { key?: string } | undefined)?.key;
+  if (done && key && NOTIFY_ON_COMPLETE[key] && at?.agent_id) {
+    const name = (at.agent as unknown as { full_name?: string } | undefined)?.full_name ?? "An agent";
+    const message = `${name} ${NOTIFY_ON_COMPLETE[key]}`;
+    await supabase.from("events").insert({ agent_id: at.agent_id, type: "agent_action", message });
+    await sendMail({ to: NOTIFY_EMAIL, subject: "Agent onboarding — action needed", text: message });
+  }
+
   revalidatePath("/agent");
   revalidatePath("/admin");
 }
@@ -77,15 +100,56 @@ export async function createAgent(formData: FormData) {
   if (formData.get("ga")) states.push("GA");
   if (formData.get("sc")) states.push("SC");
 
-  await supabase.from("agents").insert({
-    full_name: String(formData.get("full_name")),
-    email: String(formData.get("email")),
-    start_date: (formData.get("start_date") as string) || null,
-    license: String(formData.get("license")), // 'newly_licensed' | 'transferring'
-    license_states: states,
-    is_new: !!formData.get("is_new"),
-    created_by: user?.id,
-  });
+  const fullName = String(formData.get("full_name"));
+  const { data: agent } = await supabase
+    .from("agents")
+    .insert({
+      full_name: fullName,
+      email: String(formData.get("email")),
+      start_date: (formData.get("start_date") as string) || null,
+      license: String(formData.get("license")), // 'newly_licensed' | 'transferring'
+      license_states: states,
+      is_new: !!formData.get("is_new"),
+      created_by: user?.id,
+    })
+    .select("id")
+    .single();
+
+  // Auto-create the agent's Google Drive folder (no-op until Drive is configured).
+  if (agent?.id) {
+    const folder = await ensureAgentFolder(fullName);
+    if (folder.folderId) {
+      await supabase.from("agents").update({ drive_folder_id: folder.folderId }).eq("id", agent.id);
+    }
+  }
+  revalidatePath("/admin");
+}
+
+// Look up an agent's Drive folder id and mirror a signed document into it.
+// Safe no-op if Drive isn't configured or the agent has no folder.
+async function fileToDrive(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  agentId: string,
+  filename: string,
+  buf: Buffer,
+) {
+  const { data: a } = await supabase.from("agents").select("drive_folder_id").eq("id", agentId).single();
+  const folderId = (a as { drive_folder_id?: string | null } | null)?.drive_folder_id;
+  if (folderId) await uploadToFolder(folderId, filename, buf);
+}
+
+// Admin removes an agent. Cascades to agent_tasks, documents, roleplay_attempts,
+// and events (FK on delete cascade). The agent's login/profile is left intact, so
+// re-adding them with the same email rebuilds a fresh checklist they can sign back into.
+export async function deleteAgent(agentId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  if (profile?.role !== "admin") return;
+
+  await supabase.from("agents").delete().eq("id", agentId);
   revalidatePath("/admin");
 }
 
@@ -130,6 +194,7 @@ export async function recordUpload(agentTaskId: string, path: string) {
     if (file) {
       const buf = Buffer.from(await file.arrayBuffer());
       const ext = path.split(".").pop() ?? "pdf";
+      await fileToDrive(supabase, at.agent_id, `${task.key}.${ext}`, buf);
       await sendMail({
         to: BOOKKEEPING_EMAIL,
         subject: `New onboarding document: ${task.key}`,
@@ -200,6 +265,7 @@ export async function signW9(formData: FormData) {
     file_url: path,
     signed: true,
   });
+  await fileToDrive(supabase, at.agent_id, "W-9-signed.pdf", buf);
   await supabase.from("events").insert({
     agent_id: at.agent_id,
     type: "doc_submitted",
@@ -344,6 +410,7 @@ export async function signICA(formData: FormData) {
     })
     .eq("id", agentTaskId);
   await supabase.from("documents").insert({ agent_id: at.agent_id, doc_type: "ica", file_url: path, signed: true });
+  await fileToDrive(supabase, at.agent_id, "ICA-signed.pdf", buf);
 
   const agentEmail = (at.agent as unknown as { email?: string })?.email;
   const recipients = [BOOKKEEPING_EMAIL, agentEmail].filter(Boolean).join(",");
@@ -369,6 +436,112 @@ export async function signICA(formData: FormData) {
       message: `ICA saved but email failed (${mail.error}).`,
     });
   }
+
+  revalidatePath("/agent");
+  revalidatePath("/admin");
+  return {};
+}
+
+// Agent signs the Team Performance Standards Policy. Auto-verifies, emails Noah + agent, files to Drive.
+export async function signPerformance(formData: FormData) {
+  const supabase = await createClient();
+  const agentTaskId = String(formData.get("agent_task_id"));
+  const agentName = String(formData.get("name"));
+
+  const { data: at } = await supabase
+    .from("agent_tasks")
+    .select("agent_id, agent:agents(email)")
+    .eq("id", agentTaskId)
+    .single();
+  if (!at?.agent_id) return { error: "Could not find your task." };
+
+  const sig = String(formData.get("signature") || "");
+  const sigPng = sig.startsWith("data:image") ? Buffer.from(sig.split(",")[1], "base64") : undefined;
+  if (!sigPng) return { error: "Please sign in the box." };
+
+  const today = new Date().toISOString().slice(0, 10);
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = await fillPerformance({ agentName, date: today, signaturePng: sigPng });
+  } catch {
+    return { error: "Could not generate the signed policy PDF." };
+  }
+
+  const path = `${at.agent_id}/performance-${Date.now()}.pdf`;
+  const buf = Buffer.from(pdfBytes);
+  const { error: upErr } = await supabase.storage
+    .from("agent-files")
+    .upload(path, buf, { contentType: "application/pdf", upsert: true });
+  if (upErr) return { error: "Could not save the signed policy." };
+
+  await supabase
+    .from("agent_tasks")
+    .update({
+      evidence_url: path,
+      status: "verified",
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", agentTaskId);
+  await supabase
+    .from("documents")
+    .insert({ agent_id: at.agent_id, doc_type: "performance", file_url: path, signed: true });
+  await fileToDrive(supabase, at.agent_id, "Performance-Standards-signed.pdf", buf);
+
+  const agentEmail = (at.agent as unknown as { email?: string })?.email;
+  const recipients = [NOTIFY_EMAIL, agentEmail].filter(Boolean).join(",");
+  const mail = await sendMail({
+    to: recipients,
+    subject: "Signed Performance Standards Policy — The McBride Team",
+    text: `${agentName} signed the Team Performance Standards Policy. The signed copy is attached.`,
+    attachments: [{ filename: "Performance-Standards-signed.pdf", content: buf }],
+  });
+  await supabase.from("events").insert({
+    agent_id: at.agent_id,
+    type: "doc_submitted",
+    message: `Performance Standards Policy signed by ${agentName}.`,
+  });
+  if (mail.error) {
+    await supabase.from("events").insert({
+      agent_id: at.agent_id,
+      type: "email_failed",
+      message: `Performance policy saved but email failed (${mail.error}).`,
+    });
+  }
+
+  revalidatePath("/agent");
+  revalidatePath("/admin");
+  return {};
+}
+
+// Agent submits the two ZHL lenders they built a relationship with → notify Noah to confirm.
+export async function submitLenders(formData: FormData) {
+  const supabase = await createClient();
+  const agentTaskId = String(formData.get("agent_task_id"));
+  const lender1 = String(formData.get("lender1") || "").trim();
+  const lender2 = String(formData.get("lender2") || "").trim();
+  if (!lender1 || !lender2) return { error: "Please enter both lender names." };
+
+  const { data: at } = await supabase
+    .from("agent_tasks")
+    .select("agent_id, agent:agents(full_name)")
+    .eq("id", agentTaskId)
+    .single();
+  if (!at?.agent_id) return { error: "Could not find your task." };
+
+  await supabase
+    .from("agent_tasks")
+    .update({
+      notes: `Lenders: ${lender1}; ${lender2}`,
+      status: "submitted",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", agentTaskId);
+
+  const name = (at.agent as unknown as { full_name?: string } | undefined)?.full_name ?? "An agent";
+  const message = `${name} built relationships with 2 ZHL lenders: ${lender1} and ${lender2}. Call to confirm, then verify.`;
+  await supabase.from("events").insert({ agent_id: at.agent_id, type: "agent_action", message });
+  await sendMail({ to: NOTIFY_EMAIL, subject: "Agent onboarding — ZHL lenders submitted", text: message });
 
   revalidatePath("/agent");
   revalidatePath("/admin");

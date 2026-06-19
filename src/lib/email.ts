@@ -31,3 +31,6 @@ export async function sendMail(opts: {
 }
 
 export const BOOKKEEPING_EMAIL = process.env.BOOKKEEPING_EMAIL || "bookkeeping@c21magnolia.com";
+
+// Where agent-action notifications (Zillow account confirmed, lenders submitted) go.
+export const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || "noah@themcbrideteam.com";

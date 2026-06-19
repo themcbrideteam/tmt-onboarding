@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { toggleSelfTask, bumpCounter, recordUpload, logRoleplay } from "@/app/actions";
+import { toggleSelfTask, bumpCounter, recordUpload, logRoleplay, submitLenders } from "@/app/actions";
 
 type Task = {
   id: string;
@@ -42,6 +42,8 @@ export default function TaskItem({
   const [pending, start] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [score, setScore] = useState("");
+  const [l1, setL1] = useState("");
+  const [l2, setL2] = useState("");
   const t = item.task;
   const done = item.status === "verified";
   const isQuestionnaire = t.key === "questionnaire";
@@ -49,9 +51,12 @@ export default function TaskItem({
   const isCounter = t.evidence === "counter";
   const isW9 = t.key === "w9";
   const isICA = t.key === "ica";
-  const isUpload = (t.evidence === "upload" || t.evidence === "esign") && !isW9 && !isICA;
+  const isPerformance = t.key === "performance";
+  const isLenders = t.key === "two_zhl_lenders";
+  const isUpload = (t.evidence === "upload" || t.evidence === "esign") && !isW9 && !isICA && !isPerformance;
   const isRoleplay = t.type === "roleplay";
-  const adminWaits = (t.verifier === "admin" || t.verifier === "auto") && !isUpload && !isRoleplay && !isCounter;
+  const adminWaits =
+    (t.verifier === "admin" || t.verifier === "auto") && !isUpload && !isRoleplay && !isCounter && !isLenders;
 
   async function uploadFile(file: File): Promise<string | null> {
     const supabase = createClient();
@@ -139,6 +144,58 @@ export default function TaskItem({
           >
             Read & sign ICA →
           </Link>
+        )}
+
+        {/* Performance Standards e-sign */}
+        {isPerformance && item.status !== "verified" && (
+          <Link
+            href={`/agent/sign/performance?at=${item.id}`}
+            className="mt-2 inline-block rounded bg-navy px-2 py-1 text-xs font-medium text-white hover:bg-navy-light"
+          >
+            Read & sign policy →
+          </Link>
+        )}
+
+        {/* ZHL lenders — view list + submit the two you built a relationship with */}
+        {isLenders && item.status !== "verified" && (
+          <div className="mt-2 space-y-2">
+            <a href="/agent/lenders" target="_blank" className="inline-block text-xs text-navy underline">
+              View ZHL lender list →
+            </a>
+            {item.status === "submitted" ? (
+              <p className="text-xs text-slate-400">Submitted — a manager will confirm with the lenders.</p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <input
+                  value={l1}
+                  onChange={(e) => setL1(e.target.value)}
+                  placeholder="Lender 1 name"
+                  className="rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+                <input
+                  value={l2}
+                  onChange={(e) => setL2(e.target.value)}
+                  placeholder="Lender 2 name"
+                  className="rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+                <button
+                  disabled={!l1 || !l2 || locked || pending}
+                  onClick={() => {
+                    const fd = new FormData();
+                    fd.set("agent_task_id", item.id);
+                    fd.set("lender1", l1);
+                    fd.set("lender2", l2);
+                    start(async () => {
+                      await submitLenders(fd);
+                    });
+                  }}
+                  className="self-start rounded bg-navy px-2 py-1 text-xs text-white hover:bg-navy-light disabled:opacity-50"
+                >
+                  Submit lenders
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* File upload */}

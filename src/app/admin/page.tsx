@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createAgent } from "@/app/actions";
 import VerifyButton from "./verify-button";
+import DeleteAgentButton from "./delete-agent-button";
 import BrandHeader from "@/components/brand-header";
 
 export default async function AdminPage() {
@@ -84,7 +85,7 @@ export default async function AdminPage() {
                 const done = g?.gate_done ?? 0;
                 const cleared = g?.gate_cleared;
                 return (
-                  <div key={a.id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
+                  <div key={a.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 p-3">
                     <div>
                       <Link href={`/admin/agent/${a.id}`} className="text-sm font-medium text-navy hover:underline">
                         {a.full_name}
@@ -94,13 +95,16 @@ export default async function AdminPage() {
                         {(a.license_states ?? []).join("/") || "—"} {a.is_new ? "· new" : ""}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-xs font-medium ${cleared ? "text-gold" : "text-slate-600"}`}>
-                        {cleared ? "Gate cleared ✓" : `Gate ${done}/${total}`}
-                      </p>
-                      <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-slate-200">
-                        <div className="h-full bg-navy" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className={`text-xs font-medium ${cleared ? "text-gold" : "text-slate-600"}`}>
+                          {cleared ? "Gate cleared ✓" : `Gate ${done}/${total}`}
+                        </p>
+                        <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-slate-200">
+                          <div className="h-full bg-navy" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+                        </div>
                       </div>
+                      <DeleteAgentButton agentId={a.id} name={a.full_name} />
                     </div>
                   </div>
                 );
