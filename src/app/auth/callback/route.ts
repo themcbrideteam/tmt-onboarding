@@ -14,8 +14,19 @@ export async function GET(request: NextRequest) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      // Create a profile on first login (idempotent).
       if (user) {
+        // Restrict sign-in to allowed Google Workspace domain(s).
+        const allowed = (process.env.ALLOWED_EMAIL_DOMAINS || "themcbrideteam.com")
+          .split(",")
+          .map((d) => d.trim().toLowerCase())
+          .filter(Boolean);
+        const domain = (user.email || "").split("@")[1]?.toLowerCase();
+        if (allowed.length && (!domain || !allowed.includes(domain))) {
+          await supabase.auth.signOut();
+          return NextResponse.redirect(`${origin}/login?error=domain`);
+        }
+
+        // Create a profile on first login (idempotent).
         await supabase.from("profiles").upsert(
           {
             id: user.id,
