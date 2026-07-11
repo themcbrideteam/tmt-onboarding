@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import TaskItem from "./task-item";
-import MetricTap from "./metric-tap";
+import ConversationCard from "./conversation-card";
 import { Topbar, Ring, Trajectory, FlagList, GateBanner } from "@/components/ascent";
 import {
   buildCtx, dayOf, insights, progressOf, stageLocked, currentStage,
@@ -104,20 +104,12 @@ export default async function AgentPage() {
       <FlagList flags={flags} max={4} />
 
       {/* Conversations — Launch Gate criterion, then the weekly floor */}
-      <div className="a-card panel" style={{ marginBottom: 28, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <h3 style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--a-gold)" }}>
-            Conversations
-          </h3>
-          <div className="a-num" style={{ fontFamily: "var(--font-heading)", fontSize: 34, fontWeight: 700 }}>
-            {launched ? conv.last7d : conv.total}
-            <span className="a-muted" style={{ fontSize: 14, fontWeight: 500 }}>
-              {" "}{launched ? "this week / 50 floor" : "attempts / 50 to launch"}
-            </span>
-          </div>
-        </div>
-        <MetricTap agentId={agent.id} metricKey="conversation" steps={[1, 5]} />
-      </div>
+      <ConversationCard
+        agentId={agent.id}
+        initial={launched ? conv.last7d : conv.total}
+        label={launched ? "this week / 50 floor" : "attempts / 50 to launch"}
+        showTaps={process.env.NEXT_PUBLIC_FUB_SYNC !== "1"}
+      />
 
       {upNext.length > 0 && (
         <div className="a-card panel" style={{ marginBottom: 30 }}>
