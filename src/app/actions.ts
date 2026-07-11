@@ -7,6 +7,7 @@ import { fillW9 } from "@/lib/w9";
 import { fillICA } from "@/lib/ica";
 import { fillPerformance } from "@/lib/performance";
 import { sendMail, BOOKKEEPING_EMAIL, NOTIFY_EMAIL } from "@/lib/email";
+import { notifySlack } from "@/lib/slack";
 import { ensureAgentFolder, uploadToFolder } from "@/lib/drive";
 
 const TEAM_SIG_PATH = "config/team-signature.png";
@@ -19,14 +20,9 @@ const NOTIFY_ON_COMPLETE: Record<string, string> = {
 };
 
 // Agent marks a self-serve task complete (or unchecks it).
+// Update first (the hot path), then handle notifications only when needed.
 export async function toggleSelfTask(agentTaskId: string, done: boolean) {
   const supabase = await createClient();
-  const { data: at } = await supabase
-    .from("agent_tasks")
-    .select("agent_id, task:tasks(key), agent:agents(full_name)")
-    .eq("id", agentTaskId)
-    .single();
-
   await supabase
     .from("agent_tasks")
     .update({
@@ -36,12 +32,20 @@ export async function toggleSelfTask(agentTaskId: string, done: boolean) {
     })
     .eq("id", agentTaskId);
 
-  const key = (at?.task as unknown as { key?: string } | undefined)?.key;
-  if (done && key && NOTIFY_ON_COMPLETE[key] && at?.agent_id) {
-    const name = (at.agent as unknown as { full_name?: string } | undefined)?.full_name ?? "An agent";
-    const message = `${name} ${NOTIFY_ON_COMPLETE[key]}`;
-    await supabase.from("events").insert({ agent_id: at.agent_id, type: "agent_action", message });
-    await sendMail({ to: NOTIFY_EMAIL, subject: "Agent onboarding — action needed", text: message });
+  if (done) {
+    const { data: at } = await supabase
+      .from("agent_tasks")
+      .select("agent_id, task:tasks(key), agent:agents(full_name)")
+      .eq("id", agentTaskId)
+      .single();
+    const key = (at?.task as unknown as { key?: string } | undefined)?.key;
+    if (key && NOTIFY_ON_COMPLETE[key] && at?.agent_id) {
+      const name = (at.agent as unknown as { full_name?: string } | undefined)?.full_name ?? "An agent";
+      const message = `${name} ${NOTIFY_ON_COMPLETE[key]}`;
+      await supabase.from("events").insert({ agent_id: at.agent_id, type: "agent_action", message });
+      await notifySlack(`⚡ ${message}`);
+      await sendMail({ to: NOTIFY_EMAIL, subject: "Agent onboarding — action needed", text: message });
+    }
   }
 
   revalidatePath("/agent");
@@ -122,6 +126,7 @@ export async function createAgent(formData: FormData) {
       await supabase.from("agents").update({ drive_folder_id: folder.folderId }).eq("id", agent.id);
     }
   }
+  await notifySlack(`✈️ Flight opened for ${fullName} — pre-flight checklist is live. Taylor: systems + workspace items are in your queue.`);
   revalidatePath("/admin");
 }
 
@@ -342,6 +347,8 @@ export async function logRoleplay(agentTaskId: string, score: number, path: stri
       type: "roleplay_submitted",
       message: `MaverickRE role plays complete (${attemptNo} calls, ${avg.toFixed(1)} average ≥ ${threshold}) — ready to verify.`,
     });
+    const { data: ag } = await supabase.from("agents").select("full_name").eq("id", at.agent_id).single();
+    await notifySlack(`🎯 ${ag?.full_name ?? "An agent"} finished ${attemptNo} role plays at a ${avg.toFixed(1)} average — awaiting Tiffany's verification.`);
   }
   revalidatePath("/agent");
   revalidatePath("/admin");
@@ -428,6 +435,11 @@ export async function signICA(formData: FormData) {
       ? `Executed ICA completed — sent to ${recipients}.`
       : `ICA signed by agent — save your team signature in admin to finalize.`,
   });
+  await notifySlack(
+    finalized
+      ? `📝 ${agentName} signed the ICA — fully executed. Provisioning is unblocked: Taylor (email, FUB, Slack, Dotloop, MLS), Noah (GREC transfer, Ylopo), Whitney (Zillow, Opcity). Check your queues.`
+      : `📝 ${agentName} signed the ICA — needs the broker countersignature (save the team signature in admin to auto-finalize).`,
+  );
   if (mail.error) {
     await supabase.from("events").insert({
       agent_id: at.agent_id,
@@ -611,6 +623,12 @@ export async function clearGate(agentId: string, gateKey: string) {
     type: "gate_signed",
     message: `${label} signed off by ${me?.full_name ?? "a manager"}.`,
   });
+  const { data: ag } = await supabase.from("agents").select("full_name").eq("id", agentId).single();
+  await notifySlack(
+    gateKey === "g8"
+      ? `🚀 ${ag?.full_name ?? "An agent"} is cleared for launch — ${me?.full_name ?? "a manager"} signed off all seven criteria. Taylor: turn on Flex + Opcity/RDC leads. Whitney: post the announcement.`
+      : `✅ ${label} cleared for ${ag?.full_name ?? "an agent"} by ${me?.full_name ?? "a manager"}.`,
+  );
   revalidatePath("/agent");
   revalidatePath("/admin");
 }

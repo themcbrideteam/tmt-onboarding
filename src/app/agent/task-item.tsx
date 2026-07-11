@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { toggleSelfTask, bumpCounter, recordUpload, logRoleplay, submitLenders } from "@/app/actions";
@@ -73,7 +73,11 @@ export default function TaskItem({
   const [l1, setL1] = useState("");
   const [l2, setL2] = useState("");
   const t = item.task;
-  const done = item.status === "verified";
+  // Optimistic state: the UI flips the moment you click; the server catches up
+  // in the background and React reconciles when fresh data arrives.
+  const [status, setStatus] = useOptimistic<string, string>(item.status, (_, next) => next);
+  const [count, addCount] = useOptimistic<number, number>(item.progress_count, (c, d) => c + d);
+  const done = status === "verified";
   const owner = t.owner_role ?? "agent";
   const mine = owner === "agent";
   const overdue = !done && !t.recurring && t.due_day != null && t.due_day < currentDay;
@@ -104,8 +108,14 @@ export default function TaskItem({
           type="checkbox"
           className="a-check"
           checked={done}
-          disabled={locked || pending}
-          onChange={(e) => start(() => toggleSelfTask(item.id, e.target.checked))}
+          disabled={locked}
+          onChange={(e) => {
+            const next = e.target.checked;
+            start(async () => {
+              setStatus(next ? "verified" : "not_started");
+              await toggleSelfTask(item.id, next);
+            });
+          }}
           aria-label={`${done ? "Mark incomplete" : "Mark complete"}: ${t.title}`}
         />
       ) : (
@@ -149,7 +159,7 @@ export default function TaskItem({
           {t.content_state === "create" && !t.content_url && (
             <span className="vbadge pending">content TBD</span>
           )}
-          {item.status === "submitted" && <span className="vbadge pending">Awaiting review</span>}
+          {status === "submitted" && <span className="vbadge pending">Awaiting review</span>}
           {done && t.verifier === "admin" && <span className="vbadge ok">✓ Verified</span>}
           {teamHandles && (
             <span className="a-dimtxt" style={{ fontSize: 11.5 }}>
@@ -162,11 +172,16 @@ export default function TaskItem({
         {isCounter && mine && !done && (
           <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
             <span className="a-muted a-num" style={{ fontSize: 12 }}>
-              {item.progress_count}/{t.target_count}
+              {count}/{t.target_count}
             </span>
             <button
-              disabled={locked || pending}
-              onClick={() => start(() => bumpCounter(item.id, t.target_count))}
+              disabled={locked}
+              onClick={() =>
+                start(async () => {
+                  addCount(1);
+                  await bumpCounter(item.id, t.target_count);
+                })
+              }
               className="a-btn small"
             >
               + Log one
@@ -308,8 +323,8 @@ export default function TaskItem({
           {overdue ? "OVERDUE · " : ""}
           {fmtDue(t.due_day)}
         </span>
-        {STATUS_LABEL[item.status] && (
-          <span className="a-dimtxt" style={{ fontSize: 10.5 }}>{STATUS_LABEL[item.status]}</span>
+        {STATUS_LABEL[status] && (
+          <span className="a-dimtxt" style={{ fontSize: 10.5 }}>{STATUS_LABEL[status]}</span>
         )}
       </div>
     </div>
