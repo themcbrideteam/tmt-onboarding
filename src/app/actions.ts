@@ -301,8 +301,8 @@ export async function logRoleplay(agentTaskId: string, score: number, path: stri
     .single();
   if (!at?.agent_id) return;
   const meta = at.task as unknown as { target_count: number | null; pass_threshold: number | null };
-  const target = meta?.target_count ?? 10;
-  const threshold = meta?.pass_threshold ?? 7;
+  const target = meta?.target_count ?? 15;
+  const threshold = meta?.pass_threshold ?? 8;
 
   const { count } = await supabase
     .from("roleplay_attempts")
@@ -317,15 +317,14 @@ export async function logRoleplay(agentTaskId: string, score: number, path: stri
     result_url: path,
   });
 
-  // Recompute: need >= target attempts, last 3 all >= threshold.
-  const { data: recent } = await supabase
+  // Checklist standard: >= target attempts (15) at an average >= threshold (8.0).
+  const { data: all } = await supabase
     .from("roleplay_attempts")
     .select("score")
-    .eq("agent_id", at.agent_id)
-    .order("attempt_no", { ascending: false })
-    .limit(3);
-  const last3Pass = (recent ?? []).length >= 3 && (recent ?? []).every((r) => Number(r.score) >= threshold);
-  const ready = attemptNo >= target && last3Pass;
+    .eq("agent_id", at.agent_id);
+  const scores = (all ?? []).map((r) => Number(r.score));
+  const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  const ready = attemptNo >= target && avg >= threshold;
 
   await supabase
     .from("agent_tasks")
@@ -341,7 +340,7 @@ export async function logRoleplay(agentTaskId: string, score: number, path: stri
     await supabase.from("events").insert({
       agent_id: at.agent_id,
       type: "roleplay_submitted",
-      message: `MaverickRE roleplay complete (${attemptNo} calls, last 3 ≥ ${threshold}) — ready to verify.`,
+      message: `MaverickRE role plays complete (${attemptNo} calls, ${avg.toFixed(1)} average ≥ ${threshold}) — ready to verify.`,
     });
   }
   revalidatePath("/agent");
@@ -583,4 +582,35 @@ export async function setContentUrl(formData: FormData) {
     .eq("id", taskId);
   revalidatePath("/admin/content");
   revalidatePath("/agent");
+}
+
+// Agent logs a metric tap (conversation, preview, shadow, note, hour_of_power).
+export async function logMetric(agentId: string, key: string, delta: number) {
+  const allowed = ["conversation", "preview", "shadow", "note", "hour_of_power"];
+  if (!allowed.includes(key)) return;
+  const supabase = await createClient();
+  await supabase.from("metric_events").insert({ agent_id: agentId, key, delta, source: "manual" });
+  revalidatePath("/agent");
+  revalidatePath("/admin");
+}
+
+// Manager signs off a gate once every criterion is met. Attribution matters:
+// the clearance records who cleared it and when.
+export async function clearGate(agentId: string, gateKey: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role, full_name").eq("id", user!.id).single();
+  if (me?.role !== "admin") return;
+
+  await supabase.from("agent_gates").upsert({ agent_id: agentId, gate_key: gateKey, cleared_by: user!.id });
+  const label = gateKey === "g0" ? "Gate 0" : gateKey === "g8" ? "Launch Gate" : gateKey === "g30" ? "Day 30 review" : "Day 60 review";
+  await supabase.from("events").insert({
+    agent_id: agentId,
+    type: "gate_signed",
+    message: `${label} signed off by ${me?.full_name ?? "a manager"}.`,
+  });
+  revalidatePath("/agent");
+  revalidatePath("/admin");
 }
