@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import BrandHeader from "@/components/brand-header";
+import { PaperShell } from "@/components/ascent";
 import TeamSignature from "./team-signature";
 
 export default async function SignaturePage() {
@@ -17,18 +16,12 @@ export default async function SignaturePage() {
     .createSignedUrl("config/team-signature.png", 600);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <BrandHeader subtitle="My signature" maxWidth="max-w-xl">
-        <Link href="/admin" className="hover:text-white">← Dashboard</Link>
-      </BrandHeader>
-      <div className="mx-auto max-w-xl px-4 py-6">
-        <p className="mb-4 text-sm text-slate-500">
-          Draw your signature once. It&apos;s applied automatically as both <strong>Team Lead</strong> and{" "}
-          <strong>Broker of Record</strong> on every agent&apos;s ICA, so each agreement is fully executed the
-          moment the agent signs.
-        </p>
-        <TeamSignature existing={signed?.signedUrl ?? null} />
-      </div>
-    </main>
+    <PaperShell
+      sub="Broker signature"
+      backHref="/admin"
+      intro="Draw your signature once. It's applied automatically as both Team Lead and Broker of Record on every agent's ICA, so each agreement is fully executed the moment the agent signs."
+    >
+      <TeamSignature existing={signed?.signedUrl ?? null} />
+    </PaperShell>
   );
 }

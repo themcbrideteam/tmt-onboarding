@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Mark } from "@/components/ascent";
 
 const ALLOWED_DOMAIN = "themcbrideteam.com";
 
@@ -25,26 +26,25 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-navy p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xl">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/logo.png" alt="The McBride Team" className="mx-auto h-12 w-auto" />
-        <p className="mt-6 text-center text-xs font-semibold uppercase tracking-[0.2em] text-gold">
-          Agent Onboarding
-        </p>
-        <button
-          onClick={signIn}
-          className="mt-8 flex w-full items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2.5 text-sm font-medium text-white transition hover:bg-navy-light"
-        >
-          Continue with Google
-        </button>
-        {blocked && (
-          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-center text-xs text-red-600">
-            That account isn&apos;t allowed. Sign in with your @{ALLOWED_DOMAIN} account.
-          </p>
-        )}
-        <p className="mt-4 text-center text-xs text-slate-400">Use your TMT Google Workspace account.</p>
-        <p className="mt-6 text-center font-heading text-sm italic text-navy">Guiding you home.</p>
+    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20, position: "relative", zIndex: 1 }}>
+      <div style={{ textAlign: "center", maxWidth: 380, width: "100%", animation: "rise 1s var(--ease-out) both" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 22 }}>
+          <Mark size={56} />
+        </div>
+        <h1 style={{ fontSize: 40, fontWeight: 800, letterSpacing: ".2em" }}>ASCENT</h1>
+        <p className="eyebrow" style={{ marginTop: 10 }}>The McBride Team · Agent Launch</p>
+        <div className="a-card" style={{ marginTop: 34, padding: "30px 28px" }}>
+          <button onClick={signIn} className="a-btn solid" style={{ width: "100%", padding: "12px 20px", fontSize: 13.5 }}>
+            Continue with Google
+          </button>
+          {blocked && (
+            <p style={{ marginTop: 14, fontSize: 12.5, color: "#F6ACB6", background: "rgba(228,92,112,.1)", border: "1px solid rgba(228,92,112,.35)", borderRadius: 10, padding: "8px 12px" }}>
+              That account isn&apos;t allowed. Sign in with your @{ALLOWED_DOMAIN} account.
+            </p>
+          )}
+          <p className="a-dimtxt" style={{ marginTop: 14, fontSize: 12 }}>Use your TMT Google Workspace account.</p>
+        </div>
+        <p className="a-dimtxt" style={{ marginTop: 26, fontSize: 13, fontStyle: "italic" }}>Guiding you home.</p>
       </div>
     </main>
   );

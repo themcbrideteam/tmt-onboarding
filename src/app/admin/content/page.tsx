@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { setContentUrl } from "@/app/actions";
-import BrandHeader from "@/components/brand-header";
+import { Topbar } from "@/components/ascent";
 
 export default async function ContentPage() {
   const supabase = await createClient();
@@ -20,46 +20,45 @@ export default async function ContentPage() {
     .in("type", ["video", "self", "ack", "sign", "doc"])
     .order("sort_order");
 
-  return (
-    <main className="min-h-screen bg-slate-50">
-      <BrandHeader subtitle="Content links" maxWidth="max-w-3xl">
-        <Link href="/admin" className="hover:text-white">← Back to dashboard</Link>
-      </BrandHeader>
+  const missing = (tasks ?? []).filter((t) => t.content_state === "create" && !t.content_url).length;
 
-      <div className="mx-auto max-w-3xl px-4 py-6">
-        <p className="mb-4 text-sm text-slate-500">
-          Paste a Loom/doc URL for each item as you create it. Amber = still needs content.
+  return (
+    <main className="a-wrap">
+      <Topbar
+        sub="Content links"
+        right={<Link href="/admin" className="a-btn ghost small" style={{ textDecoration: "none" }}>← Mission control</Link>}
+      />
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+        <p className="a-muted" style={{ fontSize: 14, marginBottom: 20 }}>
+          Paste a Loom or doc URL for each item as it&apos;s recorded.
+          {missing > 0 && <span style={{ color: "var(--a-warn)" }}> {missing} item{missing === 1 ? "" : "s"} still need content.</span>}
         </p>
         {(stages ?? []).map((s) => {
           const stageTasks = (tasks ?? []).filter((t) => t.stage_id === s.id);
           if (stageTasks.length === 0) return null;
           return (
-            <section key={s.id} className="mb-6">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.title}</h2>
-              <div className="space-y-2">
-                {stageTasks.map((t) => (
-                  <form
-                    key={t.id}
-                    action={setContentUrl}
-                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2"
-                  >
-                    <input type="hidden" name="task_id" value={t.id} />
-                    <span className="w-48 shrink-0 truncate text-sm text-slate-700" title={t.title}>
-                      {t.title}
-                    </span>
-                    {t.content_state === "create" && !t.content_url && (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">TBD</span>
-                    )}
-                    <input
-                      name="content_url"
-                      defaultValue={t.content_url ?? ""}
-                      placeholder="https://loom.com/…"
-                      className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
-                    />
-                    <button className="rounded bg-navy px-3 py-1 text-xs text-white hover:bg-navy-light">Save</button>
-                  </form>
-                ))}
+            <section key={s.id} style={{ marginBottom: 28 }}>
+              <div className="section-title" style={{ margin: "0 0 12px" }}>
+                <h2>{s.title}</h2>
+                <div className="rule" />
               </div>
+              {stageTasks.map((t) => (
+                <form key={t.id} action={setContentUrl} className="queue-row" style={{ gap: 10 }}>
+                  <input type="hidden" name="task_id" value={t.id} />
+                  <span style={{ width: 210, flex: "none", fontSize: 13, fontFamily: "var(--font-heading)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.title}>
+                    {t.title}
+                  </span>
+                  {t.content_state === "create" && !t.content_url && <span className="vbadge pending">TBD</span>}
+                  <input
+                    name="content_url"
+                    defaultValue={t.content_url ?? ""}
+                    placeholder="https://loom.com/…"
+                    className="a-input"
+                    style={{ flex: 1, padding: "7px 11px", fontSize: 12.5 }}
+                  />
+                  <button className="a-btn small">Save</button>
+                </form>
+              ))}
             </section>
           );
         })}

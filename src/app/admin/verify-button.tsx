@@ -6,18 +6,18 @@ import { verifyTask } from "@/app/actions";
 export default function VerifyButton({ agentTaskId }: { agentTaskId: string }) {
   const [pending, start] = useTransition();
   return (
-    <div className="flex gap-1">
+    <div style={{ display: "flex", gap: 6 }}>
       <button
         disabled={pending}
         onClick={() => start(() => verifyTask(agentTaskId, true))}
-        className="rounded bg-gold px-2 py-1 text-xs font-medium text-white hover:bg-gold/100"
+        className="a-btn small good"
       >
-        Verify
+        Verify ✓
       </button>
       <button
         disabled={pending}
         onClick={() => start(() => verifyTask(agentTaskId, false))}
-        className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300"
+        className="a-btn small ghost"
       >
         Reject
       </button>

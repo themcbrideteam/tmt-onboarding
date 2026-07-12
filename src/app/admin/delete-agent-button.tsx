@@ -17,7 +17,8 @@ export default function DeleteAgentButton({ agentId, name }: { agentId: string; 
           start(() => deleteAgent(agentId));
         }
       }}
-      className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+      className="a-btn small ghost"
+      style={{ color: "#F6ACB6", borderColor: "rgba(228,92,112,.3)" }}
     >
       {pending ? "Removing…" : "Remove"}
     </button>
