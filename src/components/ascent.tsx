@@ -143,4 +143,32 @@ export function GateBanner({ ctx, gate, action }: { ctx: AgentCtx; gate: Gate; a
   );
 }
 
+/** Dark shell + white "document paper" card — for e-sign flows and long forms. */
+export function PaperShell({
+  sub,
+  backHref,
+  intro,
+  maxWidth = 640,
+  children,
+}: {
+  sub: string;
+  backHref: string;
+  intro?: React.ReactNode;
+  maxWidth?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="a-wrap">
+      <Topbar
+        sub={sub}
+        right={<a href={backHref} className="a-btn ghost small" style={{ textDecoration: "none" }}>← Back</a>}
+      />
+      <div style={{ maxWidth, margin: "0 auto" }}>
+        {intro && <p className="a-muted" style={{ fontSize: 14, margin: "0 0 18px", maxWidth: "62ch" }}>{intro}</p>}
+        <div className="paper">{children}</div>
+      </div>
+    </main>
+  );
+}
+
 export { GATES };

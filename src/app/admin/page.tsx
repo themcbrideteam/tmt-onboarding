@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createAgent, clearGate, verifyTask } from "@/app/actions";
+import { createAgent, clearGate, verifyTask, promoteAdmin } from "@/app/actions";
 import DeleteAgentButton from "./delete-agent-button";
 import { Topbar, Ring, GateBanner, FlagList } from "@/components/ascent";
 import {
@@ -27,7 +27,7 @@ export default async function AdminPage() {
     .single();
   if (profile?.role !== "admin") redirect("/agent");
 
-  const [{ data: agents }, { data: stages }, { data: allTasks }, { data: allMetrics }, { data: allRp }, { data: allGates }, { data: roleRows }] =
+  const [{ data: agents }, { data: stages }, { data: allTasks }, { data: allMetrics }, { data: allRp }, { data: allGates }, { data: roleRows }, { data: profiles }] =
     await Promise.all([
       supabase.from("agents").select("*").order("created_at", { ascending: false }),
       supabase.from("stages").select("*").order("sort_order"),
@@ -36,6 +36,7 @@ export default async function AdminPage() {
       supabase.from("roleplay_attempts").select("agent_id, score"),
       supabase.from("agent_gates").select("agent_id, gate_key, cleared_at, cleared_by"),
       supabase.from("role_assignments").select("role_key, person_name, email"),
+      supabase.from("profiles").select("id, full_name, email, role").order("created_at"),
     ]);
 
   const stageList = (stages ?? []) as Stage[];
@@ -251,6 +252,42 @@ export default async function AdminPage() {
             role-play averages under 8, conversation pace under the 50/week floor, and early-launch opportunities.
           </p>
         </div>
+      </div>
+
+      {/* Team access — promote leadership logins; agents in onboarding stay agents */}
+      <div className="section-title"><h2>Team access</h2><div className="rule" /></div>
+      <div className="a-card panel" style={{ maxWidth: 640 }}>
+        {(profiles ?? []).map((p) => {
+          const role = (roleRows ?? []).find((r) => r.email && p.email && r.email.toLowerCase() === p.email.toLowerCase());
+          const isOnboardingAgent = ((agents ?? []) as AgentRow[]).some((a) => a.email?.toLowerCase() === p.email?.toLowerCase());
+          return (
+            <div key={p.id} className="queue-row">
+              <div>
+                <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 13.5 }}>
+                  {p.full_name ?? p.email}
+                  {role && <span className="chip" style={{ marginLeft: 8, color: "var(--a-gold-hi)" }}>{ROLE_LABEL[role.role_key]}</span>}
+                </div>
+                <div className="a-muted" style={{ fontSize: 12.5 }}>{p.email}</div>
+              </div>
+              <div style={{ marginLeft: "auto" }}>
+                {p.role === "admin" ? (
+                  <span className="pill good">Admin</span>
+                ) : isOnboardingAgent ? (
+                  <span className="pill info">Agent</span>
+                ) : (
+                  <form action={promoteAdmin.bind(null, p.id)}>
+                    <button className="a-btn small">Promote to admin</button>
+                  </form>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {(profiles ?? []).length === 0 && <div className="a-empty">No logins yet.</div>}
+        <p className="a-dimtxt" style={{ fontSize: 12, marginTop: 10 }}>
+          Teammates appear here after their first Google sign-in. Promoting links their login to their role —
+          their queue (verifications, gate sign-offs) routes automatically from there.
+        </p>
       </div>
     </main>
   );

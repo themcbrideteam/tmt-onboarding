@@ -1,5 +1,5 @@
 import Link from "next/link";
-import BrandHeader from "@/components/brand-header";
+import { Topbar } from "@/components/ascent";
 
 // Zillow Home Loans lender directory — agents call through these and build a
 // personal relationship with two. Source: ZHL Lender Phone Numbers.
@@ -23,23 +23,24 @@ const LENDERS: { name: string; phone: string }[] = [
 
 export default function LendersPage() {
   return (
-    <main className="min-h-screen bg-slate-50">
-      <BrandHeader subtitle="Zillow Home Loans lenders" maxWidth="max-w-xl">
-        <Link href="/agent" className="hover:text-white">← Back</Link>
-      </BrandHeader>
-      <div className="mx-auto max-w-xl px-4 py-6">
-        <p className="mb-4 text-sm text-slate-500">
-          Call through these Zillow Home Loans lenders and build a personal relationship with at least two of them.
-          When you&apos;ve connected with two, submit their names on your checklist — Noah will confirm with the lenders.
+    <main className="a-wrap">
+      <Topbar
+        sub="ZHL lender directory"
+        right={<Link href="/agent" className="a-btn ghost small" style={{ textDecoration: "none" }}>← My journey</Link>}
+      />
+      <div style={{ maxWidth: 620, margin: "0 auto" }}>
+        <p className="a-muted" style={{ fontSize: 14, marginBottom: 18, maxWidth: "60ch" }}>
+          Call through these Zillow Home Loans lenders and build a personal relationship with at least two.
+          When you&apos;ve connected with two, submit their names on your checklist — Noah confirms with the lenders.
         </p>
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          {LENDERS.map((l, i) => (
+        <div className="a-card" style={{ padding: "10px 0", overflow: "hidden" }}>
+          {LENDERS.map((l) => (
             <div
               key={l.name}
-              className={`flex items-center justify-between px-4 py-2.5 text-sm ${i % 2 ? "bg-slate-50" : "bg-white"}`}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 22px", borderBottom: "1px solid var(--edge)", fontSize: 14 }}
             >
-              <span className="font-medium text-navy">{l.name}</span>
-              <a href={`tel:${l.phone.replace(/[^0-9]/g, "")}`} className="text-navy underline">
+              <span style={{ fontFamily: "var(--font-heading)", fontWeight: 600 }}>{l.name}</span>
+              <a href={`tel:${l.phone.replace(/[^0-9]/g, "")}`} className="tlink">
                 {l.phone}
               </a>
             </div>

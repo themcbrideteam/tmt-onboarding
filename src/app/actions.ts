@@ -632,3 +632,33 @@ export async function clearGate(agentId: string, gateKey: string) {
   revalidatePath("/agent");
   revalidatePath("/admin");
 }
+
+// Admin promotes a teammate's login to admin (and links role assignments by email).
+export async function promoteAdmin(profileId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  if (me?.role !== "admin") return;
+
+  await supabase.from("profiles").update({ role: "admin", can_verify: true }).eq("id", profileId);
+  await supabase.rpc("link_role_profiles");
+  revalidatePath("/admin");
+}
+
+// Admin adds a coaching note to an agent's flight log.
+export async function addNote(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  if (me?.role !== "admin") return;
+
+  const agentId = String(formData.get("agent_id"));
+  const body = String(formData.get("body") ?? "").trim();
+  if (!agentId || !body) return;
+  await supabase.from("agent_notes").insert({ agent_id: agentId, author_id: user!.id, body });
+  revalidatePath(`/admin/agent/${agentId}`);
+}
